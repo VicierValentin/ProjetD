@@ -5,7 +5,28 @@
 #include <arpa/inet.h>
 
 #define PORT 8081        // Port to listen on
-#define BUFSIZE 1024     // Size of the receive buffer
+#define BUFSIZE 76800     // Size of the receive buffer
+
+
+void read_jpeg_into_buffer(const char *filename, char* buffer) {
+    FILE *file = fopen(filename, "rb");  // Open the file in binary mode
+    if (!file) {
+        perror("Error opening file");
+        return NULL;
+    }
+
+    // Read the file into the buffer
+    size_t bytesRead = fread(buffer, 1, BUFSIZE, file);
+    if (bytesRead != *size) {
+        perror("Error reading file");
+        fclose(file);
+        return;
+    }
+
+    fclose(file);
+    return;
+}
+
 
 int main() {
     int sockfd, clientfd;

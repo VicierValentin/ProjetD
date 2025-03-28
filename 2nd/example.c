@@ -78,6 +78,8 @@
  static unsigned char jpegQuality = 60;
  static char* jpegFilename = "image_";
  static char* deviceName = "/dev/video0";
+
+ 
  
  /**
    Convert from YUV422 format to RGB888. Formulae are described on http://en.wikipedia.org/wiki/YUV
@@ -202,6 +204,7 @@
  
    // close output file
    fclose(outfile);
+   send_and_delete_photo(buffName);
  }
  
  /**

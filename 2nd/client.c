@@ -18,6 +18,8 @@ char file_suffix[] = ".jpeg";
 
 char jpegPath[30] = {0};
 
+int sock;
+
 char *check_image_files(const char *directory) {
     DIR *dir;
     struct dirent *entry;
@@ -52,7 +54,26 @@ char *check_image_files(const char *directory) {
     return NULL; // Return NULL if no matching files are found
 }
 
-void send_and_delete_photo(const char *file_path, int sock) {
+void read_jpeg_into_buffer(const char *filename, char* buffer) {
+    FILE *file = fopen(filename, "rb");  // Open the file in binary mode
+    if (!file) {
+        perror("Error opening file");
+        return NULL;
+    }
+
+    // Read the file into the buffer
+    size_t bytesRead = fread(buffer, 1, BUFSIZE, file);
+    if (bytesRead != *size) {
+        perror("Error reading file");
+        fclose(file);
+        return;
+    }
+
+    fclose(file);
+    return;
+}
+
+void send_and_delete_photo(const char *file_path) {
     FILE *file = fopen(file_path, "rb");
     if (file == NULL) {
         perror("Error opening file");
@@ -64,12 +85,21 @@ void send_and_delete_photo(const char *file_path, int sock) {
 
     printf("Sending photo: %s\n", file_path);
 
+    if (send(sock, "HEADER", sizeof("HEADER"), 0) < 0) {
+        perror("Error sending data");
+        fclose(file);
+        //handle server deconnection
+        connected = 0;
+        return;
+    }
+
     // Read from the file and send data in chunks
-    while ((bytes_read = fread(buffer, 1, BUFFER_SIZE, file)) > 0) {
+    while ((bytes_read = fread(buffer, 1, 128, file)) > 0) {
         if (send(sock, buffer, bytes_read, 0) < 0) {
             perror("Error sending data");
             fclose(file);
             //handle server deconnection
+            connected = 0;
             return;
         }
     }
@@ -84,8 +114,8 @@ void send_and_delete_photo(const char *file_path, int sock) {
     }
 }
 
-void *client_thread_function(void *arg) {
-    int sock;
+void init_client() {
+    
     struct sockaddr_in server_addr;
 
     // Open the directory containing the images
@@ -124,28 +154,23 @@ void *client_thread_function(void *arg) {
 
     printf("Connected to the server.\n");
 
-    // Iterate over files in the directory
-    while (1) {
-        sleep(1);
-        // Look for files matching the pattern "image_X.jpeg"
-        strncpy(jpegPath, sizeof(jpegPath), check_image_files("./images"));
-        printf(jpegPath);
-        if (jpegPath != NULL) {
-            // Send the photo and delete it afterward
-            send_and_delete_photo(jpegPath, sock);
+    while(1){
+        usleep(5000);
+        if(!connected){
+            while (connect(sock, (struct sockaddr *)&server_addr, sizeof(server_addr)) < 0) {
+                perror("Connection to server failed");
+                printf("Retrying in %d seconds...\n", 5);
+                sleep(5); // Wait before retrying
+            }
+            connected = 1;
         }
     }
 
-    printf("All photos sent and deleted successfully.\n");
-
-    // Clean up
-    closedir(dir);
-    close(sock);
 
     return 0;
 }
 
-int init_client() {
+int old_init_client() {
     pthread_t client_thread;
     int result;
     connected = 0;
@@ -153,7 +178,7 @@ int init_client() {
     printf("Initializing client...\n");
 
     // Create the thread
-    result = pthread_create(&client_thread, NULL, client_thread_function, NULL);
+    //result = pthread_create(&client_thread, NULL, client_thread_function, NULL);
     if (result != 0) {
         fprintf(stderr, "Error creating thread: %s\n", strerror(result));
         return -1;
