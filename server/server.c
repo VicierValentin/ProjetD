@@ -5,37 +5,19 @@
 #include <arpa/inet.h>
 
 #define PORT 8081        // Port to listen on
-#define BUFSIZE 76800     // Size of the receive buffer
+#define BUFSIZE 1024     // Size of the receive buffer
 
-
-void read_jpeg_into_buffer(const char *filename, char* buffer) {
-    FILE *file = fopen(filename, "rb");  // Open the file in binary mode
-    if (!file) {
-        perror("Error opening file");
-        return NULL;
-    }
-
-    // Read the file into the buffer
-    size_t bytesRead = fread(buffer, 1, BUFSIZE, file);
-    if (bytesRead != *size) {
-        perror("Error reading file");
-        fclose(file);
-        return;
-    }
-
-    fclose(file);
-    return;
-}
-
+FILE *fp = NULL;
 
 int main() {
     int sockfd, clientfd;
     struct sockaddr_in server_addr, client_addr;
     socklen_t addr_len = sizeof(client_addr);
-    char buffer[BUFSIZE];
+    char buffer[BUFSIZE] = {0};
     ssize_t bytes_received;
     int image_counter = 1; // Counter for creating unique filenames
     char file_path[256]; // To hold the file path
+    char state = 0;
 
     // Create a TCP socket
     sockfd = socket(AF_INET, SOCK_STREAM, 0);
@@ -86,29 +68,48 @@ int main() {
 
     while(1){
         // Receive data from the client until the connection closes
-        while ((bytes_received = recv(clientfd, buffer, BUFSIZE, 0)) > 0) {
-            // Generate the file path for the current image
-            snprintf(file_path, sizeof(file_path), "./images/image_%d.jpeg", image_counter);
+        if (recv(clientfd, buffer, BUFSIZE, 0) > 0) {
+            switch (state){
+                case 0:
+                    if(strncmp(buffer,"START", sizeof("START")) == 0){
+                        state = 1;
+                        // Generate the file path for the current image
+                        snprintf(file_path, sizeof(file_path), "./images/image_%d.jpeg", image_counter);
+                        printf("Photo incomming...\n");
+                        // Open the file for writing
+                        memset(buffer, 0, BUFSIZE);
+                        fp = fopen(file_path, "wb");
+                        if (fp == NULL) {
+                            perror("Error opening file");
+                            state = 0;
+                            break;
+                        }
+                    }
+                break;
 
-            // Open the file for writing
-            FILE *fp = fopen(file_path, "wb");
-            if (fp == NULL) {
-                perror("Error opening file");
+                case 1:
+                    if(strncmp(buffer, "STOP!", sizeof("STOP!")) == 0){
+                        state = 2;
+                        break;
+                    }
+                    if (fwrite(buffer, 1, BUFSIZE, fp) <0 ) {
+                        perror("Error writing to file");
+                        fclose(fp);
+                        state = 0;
+                        break;
+                    }
+                break;
+
+                case 2:
+                    memset(buffer, 0, BUFSIZE);
+                    fclose(fp); // Close the file after writing
+                    printf("Image saved as: %s\n", file_path);
+                    image_counter++; // Increment the counter for the next image
+                    printf("Photo received successfully.\n");
+                    state = 0;
+                    send(clientfd, "ACK", sizeof("ACK"), 0);
                 break;
             }
-
-            // Write the buffer to the file
-            if (fwrite(buffer, 1, bytes_received, fp) != (size_t)bytes_received) {
-                perror("Error writing to file");
-                fclose(fp);
-                break;
-            }
-
-            fclose(fp); // Close the file after writing
-            printf("Image saved as: %s\n", file_path);
-
-            image_counter++; // Increment the counter for the next image
-            printf("Photo received successfully.\n");
         }
     }
     // Clean up: close file and sockets

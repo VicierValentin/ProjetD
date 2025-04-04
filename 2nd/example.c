@@ -335,8 +335,11 @@
    count = 1;
  
    while (1) {
-      if(!connected)break;
-      sleep(5);
+      if(!connected){
+        sleep(5);
+        break;
+      }
+    usleep(1500 * 1000);
      for (;;) {
        fd_set fds;
        struct timeval tv;

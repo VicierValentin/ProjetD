@@ -18,7 +18,7 @@ char file_suffix[] = ".jpeg";
 
 char jpegPath[30] = {0};
 
-int sock;
+int sock, serverfd = 0;
 
 char *check_image_files(const char *directory) {
     DIR *dir;
@@ -54,25 +54,6 @@ char *check_image_files(const char *directory) {
     return NULL; // Return NULL if no matching files are found
 }
 
-void read_jpeg_into_buffer(const char *filename, char* buffer) {
-    FILE *file = fopen(filename, "rb");  // Open the file in binary mode
-    if (!file) {
-        perror("Error opening file");
-        return NULL;
-    }
-
-    // Read the file into the buffer
-    size_t bytesRead = fread(buffer, 1, BUFSIZE, file);
-    if (bytesRead != *size) {
-        perror("Error reading file");
-        fclose(file);
-        return;
-    }
-
-    fclose(file);
-    return;
-}
-
 void send_and_delete_photo(const char *file_path) {
     FILE *file = fopen(file_path, "rb");
     if (file == NULL) {
@@ -85,16 +66,17 @@ void send_and_delete_photo(const char *file_path) {
 
     printf("Sending photo: %s\n", file_path);
 
-    if (send(sock, "HEADER", sizeof("HEADER"), 0) < 0) {
-        perror("Error sending data");
+    const char* header = "START";
+    if (send(sock, header, sizeof("START"), 0) < 0) {
+        perror("Error sending header");
         fclose(file);
         //handle server deconnection
         connected = 0;
         return;
     }
-
+    
     // Read from the file and send data in chunks
-    while ((bytes_read = fread(buffer, 1, 128, file)) > 0) {
+    while ((bytes_read = fread(buffer, 1, BUFFER_SIZE, file)) > 0) {
         if (send(sock, buffer, bytes_read, 0) < 0) {
             perror("Error sending data");
             fclose(file);
@@ -102,10 +84,30 @@ void send_and_delete_photo(const char *file_path) {
             connected = 0;
             return;
         }
+        memset(buffer, 0, BUFFER_SIZE);
+    }
+    
+    const char* footer = "STOP!";
+    if (send(sock, footer, sizeof("STOP!"), 0) < 0) {
+        perror("Error sending footer");
+        fclose(file);
+        //handle server deconnection
+        connected = 0;
+        return;
     }
 
     fclose(file);
 
+    char recBuf[10] = {0};
+    printf("Waiting ack\n");
+    char stop = 0;
+    while(!stop){
+        bytes_read = recv(serverfd, recBuf, sizeof(recBuf), 0);
+        if(strncmp(recBuf, "ACK", sizeof("ACK")) == 0){
+            stop = 1;
+        }
+    }
+    printf("ACK Receive\n");
     // Delete the file after sending it
     if (remove(file_path) == 0) {
         printf("Photo deleted successfully: %s\n", file_path);
@@ -145,7 +147,7 @@ void init_client() {
     }
 
     // Keep trying to connect to the server until successful
-    while (connect(sock, (struct sockaddr *)&server_addr, sizeof(server_addr)) < 0) {
+    while ((serverfd = connect(sock, (struct sockaddr *)&server_addr, sizeof(server_addr))) < 0) {
         perror("Connection to server failed");
         printf("Retrying in %d seconds...\n", 5);
         sleep(5); // Wait before retrying
@@ -154,6 +156,7 @@ void init_client() {
 
     printf("Connected to the server.\n");
 
+    /*
     while(1){
         usleep(5000);
         if(!connected){
@@ -165,6 +168,7 @@ void init_client() {
             connected = 1;
         }
     }
+    */
 
 
     return 0;
