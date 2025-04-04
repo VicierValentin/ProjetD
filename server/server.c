@@ -67,53 +67,77 @@ int main() {
     printf("Client connected. Waiting to receive photo data...\n");
 
     while(1){
-        // Receive data from the client until the connection closes
-        if (recv(clientfd, buffer, BUFSIZE, 0) > 0) {
-            switch (state){
-                case 0:
-                    if(strncmp(buffer,"START", sizeof("START")) == 0){
-                        state = 1;
-                        // Generate the file path for the current image
-                        snprintf(file_path, sizeof(file_path), "./images/image_%d.jpeg", image_counter);
-                        printf("Photo incomming...\n");
-                        // Open the file for writing
-                        memset(buffer, 0, BUFSIZE);
-                        fp = fopen(file_path, "wb");
-                        if (fp == NULL) {
-                            perror("Error opening file");
-                            state = 0;
-                            break;
-                        }
-                    }
-                break;
-
-                case 1:
-                    if(strncmp(buffer, "STOP!", sizeof("STOP!")) == 0){
-                        state = 2;
-                        break;
-                    }
-                    if (fwrite(buffer, 1, BUFSIZE, fp) <0 ) {
-                        perror("Error writing to file");
-                        fclose(fp);
+        switch (state){
+            case 0:
+            if (recv(clientfd, buffer, BUFSIZE, 0) > 0) {
+                if(strncmp(buffer,"START", sizeof("START")) == 0){
+                    state = 1;
+                    // Generate the file path for the current image
+                    snprintf(file_path, sizeof(file_path), "./images/image_%d.jpeg", image_counter);
+                    // Open the file for writing
+                    memset(buffer, 0, BUFSIZE);
+                    fp = fopen(file_path, "wb");
+                    printf("Photo incomming...\n");
+                    if (fp == NULL) {
+                        perror("Error opening file");
                         state = 0;
                         break;
                     }
-                break;
-
-                case 2:
-                    memset(buffer, 0, BUFSIZE);
-                    fclose(fp); // Close the file after writing
-                    printf("Image saved as: %s\n", file_path);
-                    image_counter++; // Increment the counter for the next image
-                    printf("Photo received successfully.\n");
-                    state = 0;
-                    send(clientfd, "ACK", sizeof("ACK"), 0);
-                break;
+                }
             }
+            break;
+
+            case 1:
+            if (recv(clientfd, buffer, BUFSIZE, 0) > 0) {
+                if(strncmp(buffer, "STOP!", sizeof("STOP!")) == 0){
+                    printf("STOP! Received\n");
+                    memset(buffer, 0, BUFSIZE);
+                    state = 2;
+                    fclose(fp); // Close the file after writing
+                    image_counter++; // Increment the counter for the next image
+                    break;
+                }
+                if (fwrite(buffer, 1, BUFSIZE, fp) <0 ) {
+                    perror("Error writing to file");
+                    fclose(fp);
+                    state = 0;
+                    break;
+                }
+            }
+            break;
+
+            case 2:
+                sleep(1);
+                printf("Image saved as: %s\n", file_path);
+                state = 3;
+                send(clientfd, "ACK", sizeof("ACK"), 0);
+                printf("Photo received successfully.\n");
+                close(clientfd);
+            break;
+            
+            case 3:
+                if (listen(sockfd, 5) < 0) {
+                    perror("Error listening on socket");
+                    close(sockfd);
+                    exit(EXIT_FAILURE);
+                }
+            
+                printf("Server waiting for connection on port %d...\n", PORT);
+            
+                // Accept the first client connection (this example handles one connection at a time)
+                clientfd = accept(sockfd, (struct sockaddr *)&client_addr, &addr_len);
+                if (clientfd < 0) {
+                    perror("Error accepting connection");
+                    close(sockfd);
+                    exit(EXIT_FAILURE);
+                }
+            
+                printf("Client connected. Waiting to receive photo data...\n");
+                state = 0;
+            break;
         }
     }
     // Clean up: close file and sockets
-    close(clientfd);
     close(sockfd);
 
     return 0;
